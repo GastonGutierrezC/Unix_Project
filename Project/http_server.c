@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <arpa/inet.h> 
 
 #define BUFFER_SIZE 1024
 #define MAX_CONNECTIONS 30
@@ -16,43 +17,70 @@ void handle_request(int client_socket) {
     int bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0);
     if (bytes_received < 0) {
         perror("Error al recibir datos del cliente");
+        close(client_socket); // Cerrar el socket antes de retornar
         return;
     }
     printf("Solicitud HTTP recibida:\n%s\n", buffer);
 
     char method[10];
     char url[256];
-    sscanf(buffer, "%s %s", method, url);
-
-    if (strcmp(method, "GET") == 0) {
-        if (strcmp(url, "/") == 0) {
-            const char* response = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nServidor HTTP versión 1.0\r\n";
-            send(client_socket, response, strlen(response), 0);
-        } else {
-            int file_fd = open(url + 1, O_RDONLY);
-            if (file_fd < 0) {
-                const char* response = "HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\nRecurso no encontrado\r\n";
-                send(client_socket, response, strlen(response), 0);
-            } else {
-                char file_buffer[BUFFER_SIZE];
-                ssize_t bytes_read;
-                while ((bytes_read = read(file_fd, file_buffer, BUFFER_SIZE)) > 0) {
-                    send(client_socket, file_buffer, bytes_read, 0);
-                }
-                close(file_fd);
-            }
-        }
-    } else {
-        const char* response = "HTTP/1.0 405 Method Not Allowed\r\nContent-Type: text/plain\r\n\r\nMétodo no permitido\r\n";
+    if (sscanf(buffer, "%9s %255s", method, url) != 2) { // Limitar lectura de cadena para evitar desbordamiento
+        const char* response = "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nSolicitud HTTP inválida\r\n";
         send(client_socket, response, strlen(response), 0);
+        close(client_socket);
+        return;
     }
 
+    if (strcmp(method, "GET") != 0) {
+        const char* response = "HTTP/1.0 405 Method Not Allowed\r\nContent-Type: text/plain\r\n\r\nMétodo no permitido\r\n";
+        send(client_socket, response, strlen(response), 0);
+        close(client_socket);
+        return;
+    }
+
+    if (strcmp(url, "/") == 0) {
+        const char* response = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nServidor HTTP versión 1.0\r\n";
+        send(client_socket, response, strlen(response), 0);
+        close(client_socket);
+        return;
+    }
+
+    // Si la ruta no es la raíz, intenta abrir el archivo y enviar su contenido
+    int file_fd = open(url + 1, O_RDONLY);
+if (strcmp(method, "GET") == 0) {
+    // Abrir el archivo en la ruta especificada
+    int file_fd = open(url, O_RDONLY);
+    if (file_fd < 0) {
+        const char* response = "HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\nRecurso no encontrado\r\n";
+        send(client_socket, response, strlen(response), 0);
+        close(client_socket);
+        return;
+    }
+
+    // Leer y enviar el contenido del archivo
+    char file_buffer[BUFFER_SIZE];
+    ssize_t bytes_read;
+    while ((bytes_read = read(file_fd, file_buffer, BUFFER_SIZE)) > 0) {
+        send(client_socket, file_buffer, bytes_read, 0);
+    }
+    close(file_fd);
+    close(client_socket);
+    return;
+}
+
+
+    char file_buffer[BUFFER_SIZE];
+    ssize_t bytes_read;
+    while ((bytes_read = read(file_fd, file_buffer, BUFFER_SIZE)) > 0) {
+        send(client_socket, file_buffer, bytes_read, 0);
+    }
+    close(file_fd);
     close(client_socket);
 }
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
-        printf(stderr, "Uso: %s <puerto>\n", argv[0]);
+        fprintf(stderr, "Uso: %s <puerto>\n", argv[0]);
         return 1;
     }
 
@@ -71,11 +99,13 @@ int main(int argc, char* argv[]) {
 
     if (bind(server_socket, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
         perror("Error al enlazar el socket del servidor");
+        close(server_socket);
         return 1;
     }
 
     if (listen(server_socket, MAX_CONNECTIONS) < 0) {
         perror("Error al poner el socket en modo de escucha");
+        close(server_socket);
         return 1;
     }
 
@@ -97,6 +127,7 @@ int main(int argc, char* argv[]) {
             exit(0);
         } else if (pid < 0) {
             perror("Error al crear el proceso hijo");
+            close(client_socket);
         }
 
         close(client_socket);
