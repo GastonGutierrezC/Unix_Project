@@ -12,31 +12,7 @@
 #define BUFFER_SIZE 1024
 #define MAX_CONNECTIONS 30
 
-void handle_request(int client_socket) {
-    char buffer[BUFFER_SIZE];
-    int bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0);
-    if (bytes_received < 0) {
-        perror("Error al recibir datos del cliente");
-        close(client_socket); // Cerrar el socket antes de retornar
-        return;
-    }
-    printf("Solicitud HTTP recibida:\n%s\n", buffer);
-
-    char method[10];
-    char url[256];
-    if (sscanf(buffer, "%9s %255s", method, url) != 2) { // Limitar lectura de cadena para evitar desbordamiento
-        const char* response = "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nSolicitud HTTP inválida\r\n";
-        send(client_socket, response, strlen(response), 0);
-        close(client_socket);
-        return;
-    }
-
-    if (strcmp(method, "GET") != 0) {
-        const char* response = "HTTP/1.0 405 Method Not Allowed\r\nContent-Type: text/plain\r\n\r\nMétodo no permitido\r\n";
-        send(client_socket, response, strlen(response), 0);
-        close(client_socket);
-        return;
-    }
+void handle_get_request(int client_socket, const char* url) {
 
     if (strcmp(url, "/") == 0) {
         const char* response = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nServidor HTTP versión 1.0\r\n";
@@ -45,11 +21,7 @@ void handle_request(int client_socket) {
         return;
     }
 
-    // Si la ruta no es la raíz, intenta abrir el archivo y enviar su contenido
     int file_fd = open(url + 1, O_RDONLY);
-if (strcmp(method, "GET") == 0) {
-    // Abrir el archivo en la ruta especificada
-    int file_fd = open(url, O_RDONLY);
     if (file_fd < 0) {
         const char* response = "HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\nRecurso no encontrado\r\n";
         send(client_socket, response, strlen(response), 0);
@@ -57,7 +29,8 @@ if (strcmp(method, "GET") == 0) {
         return;
     }
 
-    // Leer y enviar el contenido del archivo
+
+
     char file_buffer[BUFFER_SIZE];
     ssize_t bytes_read;
     while ((bytes_read = read(file_fd, file_buffer, BUFFER_SIZE)) > 0) {
@@ -65,17 +38,101 @@ if (strcmp(method, "GET") == 0) {
     }
     close(file_fd);
     close(client_socket);
-    return;
 }
 
-
-    char file_buffer[BUFFER_SIZE];
-    ssize_t bytes_read;
-    while ((bytes_read = read(file_fd, file_buffer, BUFFER_SIZE)) > 0) {
-        send(client_socket, file_buffer, bytes_read, 0);
+void handle_post_request(int client_socket, const char* url, const char* body) {
+ 
+    if (strstr(url, ".py") == NULL) {
+        const char* response = "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nSolicitud POST válida solo para archivos .py\r\n";
+        send(client_socket, response, strlen(response), 0);
+        close(client_socket);
+        return;
     }
-    close(file_fd);
-    close(client_socket);
+
+
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        perror("Error al crear el pipe");
+        const char* response = "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nError interno del servidor\r\n";
+        send(client_socket, response, strlen(response), 0);
+        close(client_socket);
+        return;
+    }
+
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("Error al crear el proceso hijo");
+        const char* response = "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nError interno del servidor\r\n";
+        send(client_socket, response, strlen(response), 0);
+        close(client_socket);
+        return;
+    }
+
+    if (pid == 0) {
+
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[0]);
+        close(pipefd[1]);
+
+        // Ejecutar el script Python
+        execlp("python3", "python3", url + 1, NULL);
+        perror("Error al ejecutar el script Python");
+        exit(EXIT_FAILURE);
+    } else { 
+
+        close(pipefd[1]);
+
+ 
+        char buffer[BUFFER_SIZE];
+        ssize_t bytes_read;
+        while ((bytes_read = read(pipefd[0], buffer, BUFFER_SIZE)) > 0) {
+            send(client_socket, buffer, bytes_read, 0);
+        }
+
+        close(pipefd[0]);
+        close(client_socket);
+    }
+}
+
+void handle_request(int client_socket) {
+    char buffer[BUFFER_SIZE];
+    int bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0);
+    if (bytes_received < 0) {
+        perror("Error al recibir datos del cliente");
+        close(client_socket);
+        return;
+    }
+    printf("Solicitud HTTP recibida:\n%s\n", buffer);
+
+    char method[10];
+    char url[256];
+    if (sscanf(buffer, "%9s %255s", method, url) != 2) {
+        const char* response = "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nSolicitud HTTP inválida\r\n";
+        send(client_socket, response, strlen(response), 0);
+        close(client_socket);
+        return;
+    }
+
+    if (strcmp(method, "GET") == 0) {
+        handle_get_request(client_socket, url);
+    } else if (strcmp(method, "POST") == 0) {
+        
+        char* body_start = strstr(buffer, "\r\n\r\n");
+        if (body_start != NULL) {
+            body_start += 4;
+            handle_post_request(client_socket, url, body_start);
+        } else {
+            const char* response = "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nCuerpo de solicitud POST faltante\r\n";
+            send(client_socket, response, strlen(response), 0);
+            close(client_socket);
+        }
+    } else {
+        const char* response = "HTTP/1.0 405 Method Not Allowed\r\nContent-Type: text/plain\r\n\r\nMétodo no permitido\r\n";
+        send(client_socket, response, strlen(response), 0);
+        close(client_socket);
+        return;
+    }
 }
 
 int main(int argc, char* argv[]) {
