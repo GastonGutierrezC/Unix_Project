@@ -6,8 +6,8 @@ Para ejecutar el GET y poder leer el contenido de cualquier archivo solo debe ha
 
 ### paso 1:
 
-Ejecutar el programa puede hacerlo con ./http_server "puesto del servidor"
-donde debe especificar a que puesto estara abierto ejemplo : ./http_server 9027
+Ejecutar el programa puede hacerlo con ./http_server "puerto del servidor"
+donde debe especificar a que puerto estara abierto ejemplo : ./http_server 9027
 
 ## paso 2:
 
@@ -20,12 +20,14 @@ Finalmente solo escribir GET / o GET/index.html , para leer el contenido del arc
 
 ![Ejemplo de imagen](GET.png)
 
+![Ejemplo de imagen](web.png)
+
 # POST
 
 ### paso 1:
 
-Ejecutar el programa puede hacerlo con ./http_server "puesto del servidor"
-donde debe especificar a que puesto estara abierto ejemplo : ./http_server 9027
+Ejecutar el programa puede hacerlo con ./http_server "puerto del servidor"
+donde debe especificar a que puerto estara abierto ejemplo : ./http_server 9027
 
 ## paso 2:
 
