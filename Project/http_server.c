@@ -15,7 +15,7 @@
 void handle_get_request(int client_socket, const char* url) {
 
     if (strcmp(url, "/") == 0) {
-        const char* response = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nServidor HTTP versión 1.0\r\n";
+        const char* response = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nServidor GASTON HTTP versión 1.0\r\n";
         send(client_socket, response, strlen(response), 0);
         close(client_socket);
         return;
